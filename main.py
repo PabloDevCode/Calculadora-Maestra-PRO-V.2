@@ -84,11 +84,20 @@ def main():
 
     # --- BARRA LATERAL ---
     with st.sidebar:
-        usuario_actual = st.session_state.get('username', 'Invitado').upper()
+        # [CAMBIO] Lógica de prioridad: Nombre Comercial > Email
+        nombre_comercial = st.session_state.get('display_name')
+        email_user = st.session_state.get('username', 'Invitado')
+        
+        # Si el nombre existe y no es 'nan', lo usamos. Si no, fallback al email.
+        if nombre_comercial and str(nombre_comercial).lower() != 'nan':
+            texto_licencia = str(nombre_comercial).upper()
+        else:
+            texto_licencia = str(email_user).upper()
+
         st.markdown(f"""
         <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 6px solid #1E3A8A; margin-bottom: 25px; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
             <p style="margin: 0; font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 1px;">Licencia Propietaria</p>
-            <h2 style="margin: 5px 0 0 0; font-size: 24px; color: #1E3A8A; font-weight: 800; font-family: sans-serif;">{usuario_actual}</h2>
+            <h2 style="margin: 5px 0 0 0; font-size: 20px; color: #1E3A8A; font-weight: 800; font-family: sans-serif; line-height: 1.2;">{texto_licencia}</h2>
             <p style="margin: 5px 0 0 0; font-size: 11px; color: #2ecc71; font-weight: bold;">● SESIÓN ACTIVA Y SEGURA</p>
         </div>
         """, unsafe_allow_html=True)
