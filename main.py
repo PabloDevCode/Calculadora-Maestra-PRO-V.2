@@ -1,8 +1,10 @@
 import streamlit as st
 import pandas as pd
+import time  
 from src.core.factory import CalculatorFactory
-from src.services.auth_service import login_form, logout
+from src.services.auth_service import login_form, logout, actualizar_nombre_display 
 from src.services.pdf_service import create_pdf_bytes
+from src.ui.community import render_sidebar_community
 
 st.set_page_config(page_title="Calculadora Maestra Pro", page_icon="🏗️", layout="wide")
 
@@ -32,6 +34,53 @@ def limpiar_form_aberturas():
 def main():
     if not login_form():
         return
+    
+    # =========================================================================
+    # 🛑 ZONA DE ONBOARDING (INTERCEPTOR DE NOMBRE)
+    # =========================================================================
+    # Obtenemos los datos de la sesión
+    usuario_actual = st.session_state.get("username")
+    nombre_actual = st.session_state.get("display_name")
+
+    # CONDICIÓN: Si el nombre está vacío, es "nan" (del excel) o es igual al email
+    # Significa que el usuario NUNCA configuró su nombre comercial.
+    if not nombre_actual or str(nombre_actual) == 'nan' or str(nombre_actual).strip() == str(usuario_actual).strip():
+        
+        # Creamos columnas para centrar el formulario y que se vea elegante
+        c1, c2, c3 = st.columns([1, 2, 1])
+        
+        with c2:
+            st.markdown("### 👋 ¡Bienvenido al equipo!")
+            st.info("Para generar presupuestos profesionales, necesitamos configurar el nombre de tu empresa o marca personal.")
+            
+            with st.form("form_nombre_inicial"):
+                nuevo_nombre = st.text_input("Nombre de tu Empresa / Marca:", placeholder="Ej: Construcciones Pérez S.A.")
+                st.caption("ℹ️ Este nombre aparecerá en el encabezado de tus PDFs.")
+                
+                btn_guardar = st.form_submit_button("Guardar y Comenzar 🚀", type="primary", use_container_width=True)
+                
+                if btn_guardar:
+                    if len(nuevo_nombre) < 3:
+                        st.error("El nombre es muy corto.")
+                    else:
+                        with st.spinner("Configurando tu perfil..."):
+                            # Llamamos a la función que creaste en el paso anterior
+                            exito = actualizar_nombre_display(usuario_actual, nuevo_nombre)
+                        
+                        if exito:
+                            # Actualizamos la sesión manualmente para no esperar a la recarga
+                            st.session_state["display_name"] = nuevo_nombre
+                            st.success("¡Perfil configurado con éxito!")
+                            time.sleep(1)
+                            st.rerun() # Recargamos la página para entrar a la App
+                        else:
+                            st.error("Error de conexión. Intenta nuevamente.")
+        
+        # ⛔ STOP CRÍTICO: Esto evita que se cargue el resto de la App hasta que guarde el nombre
+        st.stop()
+    if st.session_state["authenticated"]:
+        # --- AQUÍ LLAMAMOS AL SIDEBAR ---
+        render_sidebar_community()
 
     # --- BARRA LATERAL ---
     with st.sidebar:
@@ -183,7 +232,12 @@ def main():
         col_d1.download_button("📥 Descargar CSV", csv, "materiales_total.csv", "text/csv")
         
         # Pasamos total_m2_obra al PDF
-        pdf_bytes = create_pdf_bytes(system_data_final, df_total_global, total_m2_obra, st.session_state.get("username", "Cliente"))
+        pdf_bytes = create_pdf_bytes(
+          system_data_final, 
+             df_total_global, 
+             total_m2_obra, 
+             st.session_state["display_name"] # <--- ¡Aquí va el nombre de la empresa!
+        )
         col_d2.download_button("📄 Descargar PDF", pdf_bytes, "presupuesto_obra.pdf", "application/pdf", type="primary")
 
         st.divider()

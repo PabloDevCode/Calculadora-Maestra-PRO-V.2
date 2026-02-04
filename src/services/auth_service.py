@@ -3,13 +3,54 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import time
 
+def validar_usuario(email_input, password_input):
+    """
+    Valida usuario contra Google Sheets.
+    Soporta: TRUE, 1, 1.0, SI (case insensitive)
+    """
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        # ttl=0 es CRÍTICO para leer datos frescos
+        df = conn.read(worksheet="Hoja1", ttl=0) 
+        
+        # 1. Limpieza de datos (Evita errores de tipos y espacios)
+        df['usuario'] = df['usuario'].astype(str).str.strip()
+        df['password'] = df['password'].astype(str).str.strip()
+        
+        # 2. Búsqueda exacta de credenciales
+        usuario_encontrado = df[
+            (df['usuario'] == email_input) & 
+            (df['password'] == password_input)
+        ]
+        
+        if not usuario_encontrado.empty:
+            # 3. Validación Inteligente de Estado
+            # Convertimos a string mayúscula y quitamos espacios
+            raw_estado = str(usuario_encontrado.iloc[0]['activo']).strip().upper()
+            
+            # Lista de valores que consideramos "POSITIVOS"
+            # Incluye '1.0' (lo que viste en el debug), '1', 'TRUE', 'SI'
+            valores_validos = ['TRUE', '1', '1.0', 'SI', 'YES', 'APPROVED']
+            
+            if raw_estado in valores_validos:
+                return usuario_encontrado.iloc[0]['display_name']
+            else:
+                return "INACTIVO" # Credenciales bien, pero pago mal
+        
+        return None # Credenciales mal
+        
+    except Exception as e:
+        st.error(f"Error de conexión: {e}")
+        return None
+
 def login_form():
     """
-    Maneja el login verificando contra Google Sheets.
+    Renderiza el formulario y gestiona la sesión.
     """
     if "authenticated" not in st.session_state:
         st.session_state["authenticated"] = False
         st.session_state["username"] = None
+        st.session_state["display_name"] = None
 
     if st.session_state["authenticated"]:
         return True
@@ -19,56 +60,69 @@ def login_form():
     with col2:
         st.markdown("""
         <div style="background-color: #f8f9fa; padding: 20px; border-radius: 10px; border: 1px solid #ddd; text-align: center;">
-            <h2 style="color: #1E3A8A; margin:0;">🔐 Calculadora Maestra</h2>
-            <p style="color: #666; font-size: 14px;">Ingreso de Clientes</p>
+            <h2 style="color: #1E3A8A; margin:0;">🔐 Acceso Clientes</h2>
+            <p style="color: #666; font-size: 14px;">Ingresa tus datos de suscripción</p>
         </div>
         <br>
         """, unsafe_allow_html=True)
 
         with st.form("login_form"):
-            username_input = st.text_input("Usuario")
-            password_input = st.text_input("Contraseña", type="password")
+            user_in = st.text_input("Usuario (Email)")
+            pass_in = st.text_input("Contraseña (ID Transacción)", type="password")
             submit = st.form_submit_button("Ingresar", type="primary", use_container_width=True)
 
             if submit:
-                try:
-                    # 1. Conectamos con Google Sheets
-                    conn = st.connection("gsheets", type=GSheetsConnection)
+                if not user_in or not pass_in:
+                    st.warning("⚠️ Faltan datos.")
+                else:
+                    resultado = validar_usuario(user_in, pass_in)
                     
-                    # 2. Leemos la hoja (ttl=0 para que NO guarde caché y lea siempre fresco)
-                    # Si tienes muchos usuarios, puedes poner ttl=60 (1 min de caché)
-                    df = conn.read(ttl=0)
-                    
-                    # 3. Limpieza de datos (por si quedan espacios vacíos en el Excel)
-                    df = df.astype(str) # Convertir todo a texto para evitar errores
-                    df['usuario'] = df['usuario'].str.strip()
-                    df['password'] = df['password'].str.strip()
-                    df['activo'] = df['activo'].str.upper().str.strip()
-
-                    # 4. Buscamos el usuario
-                    user_found = df[
-                        (df['usuario'] == username_input) & 
-                        (df['password'] == password_input) & 
-                        (df['activo'] == 'SI')
-                    ]
-
-                    if not user_found.empty:
+                    if resultado and resultado != "INACTIVO":
+                        # --- LOGIN EXITOSO ---
                         st.session_state["authenticated"] = True
-                        st.session_state["username"] = username_input
-                        st.success(f"¡Hola de nuevo, {username_input}!")
+                        st.session_state["username"] = user_in
+                        
+                        # Manejo de nombre vacío
+                        nombre_mostrar = user_in
+                        if not pd.isna(resultado) and str(resultado) != "nan" and str(resultado) != "":
+                            nombre_mostrar = resultado
+                            
+                        st.session_state["display_name"] = nombre_mostrar
+                        
+                        st.success(f"¡Bienvenido/a, {nombre_mostrar}!")
                         time.sleep(1)
                         st.rerun()
-                    else:
-                        st.error("❌ Credenciales inválidas o acceso expirado.")
                         
-                except Exception as e:
-                    st.error("⚠️ Error de conexión con la base de datos.")
-                    #st.exception(e) # Descomentar solo para ver el error real si falla
+                    elif resultado == "INACTIVO":
+                        st.error("🔒 Cuenta inactiva. Verifica tu pago.")
+                    else:
+                        st.error("❌ Usuario o contraseña incorrectos.")
 
     return False
 
 def logout():
     st.session_state["authenticated"] = False
     st.session_state["username"] = None
-    st.session_state["project_cart"] = []
+    st.session_state["display_name"] = None
     st.rerun()
+
+def actualizar_nombre_display(email_usuario, nuevo_nombre):
+    """
+    Actualiza el nombre comercial en Google Sheets.
+    """
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df = conn.read(worksheet="Hoja1", ttl=0)
+        
+        df['usuario'] = df['usuario'].astype(str).str.strip()
+        mask = df['usuario'] == str(email_usuario).strip()
+        
+        if mask.any():
+            idx = df.index[mask][0]
+            df.at[idx, 'display_name'] = str(nuevo_nombre)
+            conn.update(worksheet="Hoja1", data=df)
+            return True
+        return False
+    except Exception as e:
+        st.error(f"Error guardando nombre: {e}")
+        return False
