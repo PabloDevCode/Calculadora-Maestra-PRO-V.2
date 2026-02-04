@@ -104,7 +104,7 @@ def logout():
     st.session_state["authenticated"] = False
     st.session_state["username"] = None
     st.session_state["display_name"] = None
-    st.rerun()
+    #st.rerun()
 
 def actualizar_nombre_display(email_usuario, nuevo_nombre):
     """
