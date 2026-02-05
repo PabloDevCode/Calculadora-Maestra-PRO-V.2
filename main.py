@@ -112,11 +112,14 @@ def main():
         if "Cielorraso" in sistema:
             ancho = col1.number_input("Ancho (m)", 0.5, 50.0, 3.0)
             largo = col2.number_input("Largo (m)", 0.5, 50.0, 4.0)
-            altura = 0
+            # [NUEVO] Input para el largo de la vela
+            largo_vela = st.number_input("Largo de Vela/Bajada (m)", 0.1, 5.0, 0.60, step=0.10, help="Distancia desde el techo real hasta el cielorraso.")
+            altura = 0 # No se usa en cielorraso
         else:
             largo = col1.number_input("Largo (m)", 0.5, 100.0, 5.0)
             altura = col2.number_input("Altura (m)", 0.5, 20.0, 2.6)
             ancho = 0
+            largo_vela = 0 # No aplica
             
             # --- GESTIÓN DE ABERTURAS ---
             st.markdown("---")
@@ -162,7 +165,8 @@ def main():
                     tipo_sistema=sistema, largo=largo, altura=altura, ancho=ancho,
                     separacion=sep/100, desperdicio=desp, caras=caras, capas=capas,
                     aislacion=aislacion, espesor_cielo=espesor_cielo,
-                    aberturas=lista_aberturas_final
+                    aberturas=lista_aberturas_final,
+                    largo_vela=largo_vela # <--- [NUEVO] Pasamos el parámetro
                 )
                 
                 # [CAMBIO] Desempaquetamos DF y Metadata
