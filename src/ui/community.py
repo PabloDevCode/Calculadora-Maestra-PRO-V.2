@@ -5,35 +5,27 @@ import time
 
 def guardar_telefono_comunidad(email_usuario, nuevo_telefono):
     """
-    Actualiza la columna 'telefono' del usuario en Google Sheets.
-    Versión BLINDADA: Evita notación científica en IDs.
+    Guarda el teléfono asegurando que no se rompan los IDs de Make.
     """
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
         df = conn.read(worksheet="Hoja1", ttl=0)
         
-        # 1. Asegurar que la columna telefono existe
+        # Asegurar columna telefono
         if "telefono" not in df.columns:
             df["telefono"] = ""
 
-        # 2. BLINDAJE: Convertir TODAS las columnas críticas a String
-        # Esto evita que al guardar, Pandas convierta el ID 123456 a 1.2E5
-        df['usuario'] = df['usuario'].astype(str)
-        df['password'] = df['password'].astype(str)
-        df['telefono'] = df['telefono'].astype(str)
+        # 🛡️ PROTECCIÓN CRÍTICA DE DATOS
+        df['password'] = df['password'].astype(str).replace(r'\.0$', '', regex=True).str.strip()
+        df['usuario'] = df['usuario'].astype(str).str.strip()
+        df['telefono'] = df['telefono'].astype(str) # Forzamos texto en telefono también
 
-        # 3. Buscar índice (limpiando espacios por si acaso)
-        # Usamos una máscara temporal para buscar
-        mask = df['usuario'].str.strip() == str(email_usuario).strip()
+        # Buscar usuario
+        mask = df['usuario'] == str(email_usuario).strip()
         
         if mask.any():
-            # Obtener el índice real
             idx = df.index[mask][0]
-            
-            # Escribir en memoria (Forzando string)
             df.at[idx, 'telefono'] = str(nuevo_telefono)
-            
-            # 4. Guardar en nube (Sobrescribe con formato seguro)
             conn.update(worksheet="Hoja1", data=df)
             return True
         else:
@@ -43,23 +35,34 @@ def guardar_telefono_comunidad(email_usuario, nuevo_telefono):
         st.sidebar.error(f"Error guardando datos: {e}")
         return False
 
+def mostrar_boton_final():
+    st.sidebar.success("¡Acceso Habilitado!")
+    st.sidebar.markdown(f"""
+    <a href="https://chat.whatsapp.com/E17DxkdMbfdIBax5QUJ5E2?mode=gi_t" target="_blank" style="text-decoration:none;">
+        <div style="background-color:#25D366; color:white; padding:10px; border-radius:5px; text-align:center; font-weight:bold;">
+            👉 UNIRME AL GRUPO
+        </div>
+    </a>
+    """, unsafe_allow_html=True)
+
 def render_sidebar_community():
+    # Solo mostrar si está logueado
     if not st.session_state.get("authenticated", False):
         return
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("🚀 Comunidad VIP")
     
-    # Si ya desbloqueó en esta sesión, mostrar botón directo
+    # Verificamos si ya lo desbloqueó en esta sesión
     if st.session_state.get("whatsapp_unlocked", False):
         mostrar_boton_final()
         return
 
-    st.sidebar.info("Confirma tu WhatsApp para acceder al grupo de soporte.")
+    st.sidebar.info("Ingresa tu WhatsApp para acceder al soporte técnico.")
 
-    with st.sidebar.form("lead_magnet"):
-        tel = st.text_input("Tu WhatsApp:", placeholder="+54 9...", help="Ej: +54 9 11 1234 5678")
-        btn = st.form_submit_button("🔓 Desbloquear", use_container_width=True)
+    with st.sidebar.form("lead_magnet_wsp"):
+        tel = st.text_input("Tu WhatsApp:", placeholder="+54 9...", help="Ej: +54 9 221 123 4567")
+        btn = st.form_submit_button("🔓 Desbloquear Acceso", use_container_width=True)
         
         if btn:
             if len(tel) < 8:
@@ -73,16 +76,4 @@ def render_sidebar_community():
                     st.session_state["whatsapp_unlocked"] = True
                     st.rerun()
                 else:
-                    st.sidebar.error("Error al actualizar base de datos.")
-
-def mostrar_boton_final():
-    st.sidebar.success("¡Acceso Habilitado!")
-    st.sidebar.markdown(f"""
-    <a href="https://chat.whatsapp.com/E17DxkdMbfdIBax5QUJ5E2?mode=gi_t" target="_blank" style="text-decoration:none;">
-        <button style="
-            background-color:#25D366; color:white; padding:10px; 
-            width:100%; border-radius:5px; border:none; font-weight:bold; cursor:pointer;">
-            👉 IR AL GRUPO AHORA
-        </button>
-    </a>
-    """, unsafe_allow_html=True)
+                    st.sidebar.error("Error al guardar. Intenta de nuevo.")

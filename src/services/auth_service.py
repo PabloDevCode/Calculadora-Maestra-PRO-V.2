@@ -106,20 +106,31 @@ def logout():
     st.session_state["display_name"] = None
     #st.rerun()
 
+# --- MANTÉN TODO LO DE ARRIBA IGUAL, SOLO CAMBIA ESTA FUNCIÓN AL FINAL ---
+
 def actualizar_nombre_display(email_usuario, nuevo_nombre):
     """
     Actualiza el nombre comercial en Google Sheets.
+    Versión BLINDADA: Evita romper los IDs de Make al guardar.
     """
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
         df = conn.read(worksheet="Hoja1", ttl=0)
         
+        # 🛡️ PROTECCIÓN CRÍTICA ANTES DE GUARDAR
+        # Aseguramos que los IDs (password) sean texto plano
+        # Si no hacemos esto, Python guarda "1.23E+09" y rompe Make
+        df['password'] = df['password'].astype(str).replace(r'\.0$', '', regex=True).str.strip()
         df['usuario'] = df['usuario'].astype(str).str.strip()
+        
+        # Buscar usuario
         mask = df['usuario'] == str(email_usuario).strip()
         
         if mask.any():
             idx = df.index[mask][0]
             df.at[idx, 'display_name'] = str(nuevo_nombre)
+            
+            # Guardamos la tabla completa ya "sanitizada"
             conn.update(worksheet="Hoja1", data=df)
             return True
         return False
