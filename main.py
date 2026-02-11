@@ -14,11 +14,15 @@ if "project_cart" not in st.session_state:
 if "temp_aberturas" not in st.session_state:
     st.session_state["temp_aberturas"] = []
 
+# --- CORRECCIÓN DE BUG: Validar índice antes de borrar ---
 def eliminar_item(index):
-    del st.session_state["project_cart"][index]
+    if 0 <= index < len(st.session_state["project_cart"]):
+        del st.session_state["project_cart"][index]
 
 def eliminar_abertura_temp(index):
-    del st.session_state["temp_aberturas"][index]
+    if 0 <= index < len(st.session_state["temp_aberturas"]):
+        del st.session_state["temp_aberturas"][index]
+# ---------------------------------------------------------
 
 def agregar_abertura_temp(ancho, alto, cantidad):
     if cantidad > 0:
@@ -31,8 +35,6 @@ def agregar_abertura_temp(ancho, alto, cantidad):
 def limpiar_form_aberturas():
     st.session_state["temp_aberturas"] = []
 
-# --- COPIA Y REEMPLAZA LA FUNCIÓN main() EN main.py ---
-
 def main():
     if not login_form():
         return
@@ -43,15 +45,11 @@ def main():
     usuario_actual = st.session_state.get("username")
     nombre_actual = st.session_state.get("display_name")
 
-    # 1. Normalización de datos para comparación segura
-    # Convertimos a string, quitamos espacios y pasamos a minúsculas para validar
     safe_nombre = str(nombre_actual).strip()
     safe_user = str(usuario_actual).strip()
     
-    lista_invalidos = ['nan', 'none', '', 'null']
+    lista_invalidos = ['nan', 'none', '', 'null', 'none']
 
-    # 2. La Condición "Paranoica"
-    # Si es inválido (nan/vacio) O si es igual al email (usuario no configurado)
     if safe_nombre.lower() in lista_invalidos or safe_nombre.lower() == safe_user.lower():
         
         c1, c2, c3 = st.columns([1, 2, 1])
@@ -80,7 +78,7 @@ def main():
                         else:
                             st.error("Error de conexión. Intenta nuevamente.")
         
-        st.stop() # ⛔ DETIENE LA EJECUCIÓN AQUÍ
+        st.stop()
     
     # =========================================================================
     # 🏁 INICIO DE LA APP
@@ -91,11 +89,9 @@ def main():
 
     # --- BARRA LATERAL ---
     with st.sidebar:
-        # Lógica de visualización robusta
         display_text = str(st.session_state.get('display_name', '')).strip()
         user_email = str(st.session_state.get('username', 'Invitado')).strip()
 
-        # Si el nombre es 'nan' o vacío, usamos el email. Si no, el nombre.
         if display_text.lower() in ['nan', 'none', '']:
             texto_licencia = user_email.upper()
         else:
@@ -125,9 +121,9 @@ def main():
             largo = col1.number_input("Largo (m)", 0.5, 100.0, 5.0)
             altura = col2.number_input("Altura (m)", 0.5, 20.0, 2.6)
             ancho = 0
-            largo_vela = 0
+            largo_vela = 0.60
             
-            # --- GESTIÓN DE ABERTURAS (Solo muros) ---
+            # --- GESTIÓN DE ABERTURAS ---
             st.markdown("---")
             with st.expander("🪟 Gestión de Aberturas", expanded=False):
                 cA, cB, cC = st.columns([1.2, 1.2, 1])
@@ -152,7 +148,6 @@ def main():
         desp = st.slider("Desperdicio (%)", 0, 20, 10)
         aislacion = st.checkbox("Incluir Aislación")
         
-        # Opciones dinámicas según sistema
         caras, capas, espesor_cielo = 1, 1, "9.5mm"
         
         if "Drywall" in sistema:
@@ -163,12 +158,8 @@ def main():
         elif "Steel" in sistema:
             capas = 1 if st.radio("Placas Interior", ["1", "2"], horizontal=True) == "1" else 2
 
-        # Lógica de Cajones (Experimental)
-        st.divider()
-        usar_cajones = st.checkbox("Incluir Cajones/Dinteles")
-        metros_cajon = 0.0
-        if usar_cajones:
-            metros_cajon = st.number_input("Metros Lineales de Cajón", 0.0, 100.0, 0.0)
+        # Lógica de Cajones (Deshabilitada temporalmente como pedido)
+        metros_cajon = 0 
 
         st.divider()
         
@@ -176,6 +167,7 @@ def main():
             try:
                 lista_aberturas_final = list(st.session_state["temp_aberturas"])
                 
+                # Invocación robusta al Factory
                 calc = CalculatorFactory.get_calculator(
                     tipo_sistema=sistema, largo=largo, altura=altura, ancho=ancho,
                     separacion=sep/100, desperdicio=desp, caras=caras, capas=capas,
@@ -205,7 +197,7 @@ def main():
                 limpiar_form_aberturas()
                 
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"Error en cálculo: {e}")
 
         c_reset, c_logout = st.columns(2)
         if c_reset.button("🗑️ Reiniciar"):
@@ -214,82 +206,80 @@ def main():
             st.rerun()
         c_logout.button("🔒 Salir", on_click=logout)
 
-    # --- PANEL CENTRAL ---
-    st.title("🏗️ Calculadora de Materiales")
-    
-    if len(st.session_state["project_cart"]) > 0:
-        
-        # Procesamiento Global
-        all_dfs = [item['df'] for item in st.session_state["project_cart"]]
-        df_concat_global = pd.concat(all_dfs)
-        df_total_global = df_concat_global.groupby(["Material", "Unidad"], as_index=False)["Cantidad"].sum()
-        
-        mapa_global = df_concat_global.drop_duplicates(subset=["Material"]).set_index("Material")["Categoría"]
-        df_total_global["Categoría"] = df_total_global["Material"].map(mapa_global)
-        df_total_global = df_total_global[["Categoría", "Material", "Unidad", "Cantidad"]].sort_values("Categoría")
+    # =========================================================================
+    # VISTA PRINCIPAL (CARRITO)
+    # =========================================================================
+    st.title("🛒 Tu Proyecto")
 
-        # [NUEVO] Cálculo de Totales m2
-        total_m2_obra = sum([item['meta']['m2'] for item in st.session_state["project_cart"]])
-
-        # Preparar datos por sistema para el PDF (ahora con m2)
-        sistemas_activos = list(set([item['sistema'] for item in st.session_state["project_cart"]]))
-        system_data_final = {} 
-        
-        for sys in sistemas_activos:
-            items_sys = [x for x in st.session_state["project_cart"] if x['sistema'] == sys]
-            if items_sys:
-                df_sys_raw = pd.concat([x['df'] for x in items_sys])
-                df_sys_grouped = df_sys_raw.groupby(["Material", "Unidad"], as_index=False)["Cantidad"].sum()
-                df_sys_grouped["Categoría"] = df_sys_grouped["Material"].map(mapa_global)
-                df_sys_grouped = df_sys_grouped[["Categoría", "Material", "Unidad", "Cantidad"]].sort_values("Categoría")
-                
-                # Sumamos los m2 de este sistema
-                m2_sys = sum([x['meta']['m2'] for x in items_sys])
-                
-                system_data_final[sys] = {
-                    'df': df_sys_grouped,
-                    'm2': round(m2_sys, 2)
-                }
-
-        # HEADER VISUAL CON TOTAL DE M2
-        st.markdown(f"### 🛒 Resumen Total de Compras (Sup. Total: **{total_m2_obra:.2f} m²**)")
-        st.dataframe(df_total_global, use_container_width=True, hide_index=True)
-
-        col_d1, col_d2 = st.columns(2)
-        csv = df_total_global.to_csv(index=False).encode('utf-8')
-        col_d1.download_button("📥 Descargar CSV", csv, "materiales_total.csv", "text/csv")
-        
-        # Pasamos total_m2_obra al PDF
-        pdf_bytes = create_pdf_bytes(
-          system_data_final, 
-             df_total_global, 
-             total_m2_obra, 
-             st.session_state["display_name"] # <--- ¡Aquí va el nombre de la empresa!
-        )
-        col_d2.download_button("📄 Descargar PDF", pdf_bytes, "presupuesto_obra.pdf", "application/pdf", type="primary")
-
-        st.divider()
-
-        # DESGLOSE
-        st.subheader("📋 Detalle Individual por Ambiente")
-        
-        for i, item in enumerate(st.session_state["project_cart"]):
-            # [CAMBIO] Mostrar m2 en el título del acordeón
-            m2_item = item['meta']['m2']
-            info_titulo = f"{i+1}. {item['nombre']} ({m2_item} m²) | {item['sistema']}"
-            
-            with st.expander(info_titulo, expanded=False):
-                c1, c2 = st.columns([5, 1])
-                with c1:
-                    st.dataframe(item['df'], use_container_width=True, hide_index=True)
-                with c2:
-                    st.markdown("<br><br>", unsafe_allow_html=True)
-                    if st.button("🗑️ Borrar", key=f"del_ind_{i}"):
-                        eliminar_item(i)
-                        st.rerun()
+    if not st.session_state["project_cart"]:
+        st.info("👈 Configura tu primer ambiente en el menú lateral y dale a 'Agregar'.")
+        st.markdown("""
+        <div style="text-align: center; color: #ccc; margin-top: 50px;">
+            <h1>🏗️</h1>
+            <p>Tu lista de materiales aparecerá aquí</p>
+        </div>
+        """, unsafe_allow_html=True)
 
     else:
-        st.info("👈 Utiliza el panel izquierdo para configurar tu proyecto.")
+        # Pestañas
+        tab1, tab2 = st.tabs(["📋 Detalle por Ambiente", "📦 Total & PDF"])
+        
+        with tab1:
+            for i, item in enumerate(st.session_state["project_cart"]):
+                with st.expander(f"📍 {item['nombre']} ({item['sistema']}) - {item['meta']['m2']} m²", expanded=True):
+                    st.dataframe(item['df'], use_container_width=True, hide_index=True)
+                    if st.button(f"Eliminar {item['nombre']}", key=f"del_{i}"):
+                        eliminar_item(i) # Función protegida
+                        st.rerun()
+
+        with tab2:
+            st.markdown("### Total de Materiales a Comprar")
+            # Unificar dataframes
+            all_dfs = [item['df'] for item in st.session_state["project_cart"]]
+            total_m2_obra = sum([item['meta']['m2'] for item in st.session_state["project_cart"]])
+
+            if all_dfs:
+                df_total = pd.concat(all_dfs)
+                # Agrupar por Material y Unidad, sumando Cantidad
+                df_final = df_total.groupby(["Material", "Unidad", "Categoría"], as_index=False)["Cantidad"].sum()
+                
+                st.dataframe(df_final, use_container_width=True, hide_index=True)
+                
+                st.divider()
+                st.subheader("📄 Descargar Presupuesto")
+                
+                # Generación del PDF
+                try:
+                    # Preparar datos por sistema para el PDF
+                    sistemas_activos = list(set([item['sistema'] for item in st.session_state["project_cart"]]))
+                    system_data_final = {}
+                    
+                    for sys in sistemas_activos:
+                        items_sys = [x for x in st.session_state["project_cart"] if x['sistema'] == sys]
+                        if items_sys:
+                            df_sys_raw = pd.concat([x['df'] for x in items_sys])
+                            df_sys_grouped = df_sys_raw.groupby(["Material", "Unidad", "Categoría"], as_index=False)["Cantidad"].sum()
+                            m2_sys = sum([x['meta']['m2'] for x in items_sys])
+                            system_data_final[sys] = {'df': df_sys_grouped, 'm2': round(m2_sys, 2)}
+
+                    nombre_para_pdf = texto_licencia
+                    
+                    pdf_bytes = create_pdf_bytes(
+                        system_data_final, 
+                        df_final, 
+                        total_m2_obra, 
+                        nombre_para_pdf
+                    )
+                    
+                    st.download_button(
+                        label="Descargar PDF 📥",
+                        data=pdf_bytes,
+                        file_name="computo_materiales.pdf",
+                        mime="application/pdf",
+                        type="primary"
+                    )
+                except Exception as e:
+                    st.error(f"Error al generar PDF: {e}")
 
 if __name__ == "__main__":
     main()

@@ -14,39 +14,36 @@ def validar_usuario(email_input, password_input):
         df = conn.read(worksheet="Hoja1", ttl=0) 
         
         # 1. Limpieza de datos (Evita errores de tipos y espacios)
-        df['usuario'] = df['usuario'].astype(str).str.strip()
-        df['password'] = df['password'].astype(str).str.strip()
+        # Fix crítico para Make: '123456.0' -> '123456'
+        if 'usuario' in df.columns:
+            df['usuario'] = df['usuario'].astype(str).str.strip()
+        if 'password' in df.columns:
+            df['password'] = df['password'].astype(str).replace(r'\.0$', '', regex=True).str.strip()
         
         # 2. Búsqueda exacta de credenciales
         usuario_encontrado = df[
-            (df['usuario'] == email_input) & 
-            (df['password'] == password_input)
+            (df['usuario'] == str(email_input).strip()) & 
+            (df['password'] == str(password_input).strip())
         ]
         
         if not usuario_encontrado.empty:
             # 3. Validación Inteligente de Estado
-            # Convertimos a string mayúscula y quitamos espacios
             raw_estado = str(usuario_encontrado.iloc[0]['activo']).strip().upper()
-            
-            # Lista de valores que consideramos "POSITIVOS"
-            # Incluye '1.0' (lo que viste en el debug), '1', 'TRUE', 'SI'
             valores_validos = ['TRUE', '1', '1.0', 'SI', 'YES', 'APPROVED']
             
             if raw_estado in valores_validos:
                 return usuario_encontrado.iloc[0]['display_name']
             else:
-                return "INACTIVO" # Credenciales bien, pero pago mal
+                return "INACTIVO"
         
-        return None # Credenciales mal
+        return None 
         
     except Exception as e:
         st.error(f"Error de conexión: {e}")
         return None
 
 def login_form():
-    """
-    Renderiza el formulario y gestiona la sesión.
-    """
+    """Renderiza el formulario con TU DISEÑO ESTÉTICO y gestiona la sesión."""
     if "authenticated" not in st.session_state:
         st.session_state["authenticated"] = False
         st.session_state["username"] = None
@@ -55,7 +52,7 @@ def login_form():
     if st.session_state["authenticated"]:
         return True
 
-    # --- UI LOGIN ---
+    # --- TU UI LOGIN ORIGINAL (Conservada) ---
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown("""
@@ -82,9 +79,9 @@ def login_form():
                         st.session_state["authenticated"] = True
                         st.session_state["username"] = user_in
                         
-                        # Manejo de nombre vacío
+                        # Manejo seguro de nombre vacío (pd.isna requiere pandas importado)
                         nombre_mostrar = user_in
-                        if not pd.isna(resultado) and str(resultado) != "nan" and str(resultado) != "":
+                        if not pd.isna(resultado) and str(resultado) not in ["nan", "", "None"]:
                             nombre_mostrar = resultado
                             
                         st.session_state["display_name"] = nombre_mostrar
@@ -104,34 +101,30 @@ def logout():
     st.session_state["authenticated"] = False
     st.session_state["username"] = None
     st.session_state["display_name"] = None
-    #st.rerun()
-
-# --- MANTÉN TODO LO DE ARRIBA IGUAL, SOLO CAMBIA ESTA FUNCIÓN AL FINAL ---
+    st.session_state["project_cart"] = []
+    # st.rerun()  <-- ELIMINADO para evitar error de callback
 
 def actualizar_nombre_display(email_usuario, nuevo_nombre):
     """
-    Actualiza el nombre comercial en Google Sheets.
-    Versión BLINDADA: Evita romper los IDs de Make al guardar.
+    Actualiza el nombre preservando la integridad de datos para Make.
     """
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
         df = conn.read(worksheet="Hoja1", ttl=0)
         
-        # 🛡️ PROTECCIÓN CRÍTICA ANTES DE GUARDAR
-        # Aseguramos que los IDs (password) sean texto plano
-        # Si no hacemos esto, Python guarda "1.23E+09" y rompe Make
-        df['password'] = df['password'].astype(str).replace(r'\.0$', '', regex=True).str.strip()
-        df['usuario'] = df['usuario'].astype(str).str.strip()
+        # 🛡️ PROTECCIÓN CRÍTICA DE FORMATO
+        if 'password' in df.columns:
+            df['password'] = df['password'].astype(str).replace(r'\.0$', '', regex=True).str.strip()
+        if 'usuario' in df.columns:
+            df['usuario'] = df['usuario'].astype(str).str.strip()
         
-        # Buscar usuario
         mask = df['usuario'] == str(email_usuario).strip()
         
         if mask.any():
             idx = df.index[mask][0]
             df.at[idx, 'display_name'] = str(nuevo_nombre)
-            
-            # Guardamos la tabla completa ya "sanitizada"
             conn.update(worksheet="Hoja1", data=df)
+            st.cache_data.clear() # Limpiamos caché para ver el cambio al instante
             return True
         return False
     except Exception as e:

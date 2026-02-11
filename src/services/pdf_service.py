@@ -8,9 +8,6 @@ class PDFReport(FPDF):
         self.user_name = str(user_name).upper()
 
     def header(self):
-        # ... (Se mantiene igual que antes) ...
-        # (Para ahorrar espacio, copia el header que ya tenías y que funcionaba bien)
-        # PORTADA
         if self.page_no() == 1:
             self.set_fill_color(40, 55, 71) 
             self.rect(0, 0, 210, 35, 'F') 
@@ -80,13 +77,10 @@ class PDFReport(FPDF):
             
         self.ln(5)
         self.cell(0, 8, f"  {title}", 0, 1, 'L', 1)
-        
-        # Agregamos Subtítulo (Metros Cuadrados)
         if subtitle:
             self.set_font('Helvetica', 'I', 9)
             self.set_text_color(50, 50, 50)
             self.cell(0, 6, f"   {subtitle}", 0, 1, 'L')
-            
         self.ln(2)
 
     def generate_table(self, df):
@@ -120,6 +114,7 @@ class PDFReport(FPDF):
                 mat = mat.encode('latin-1', 'replace').decode('latin-1')
             except:
                 pass
+                
             fill_mode = True 
             self.cell(w_cat, h, cat, 1, 0, 'L', fill_mode)
             self.cell(w_mat, h, mat, 1, 0, 'L', fill_mode)
@@ -128,38 +123,39 @@ class PDFReport(FPDF):
             alternate = not alternate 
 
 def create_pdf_bytes(systems_dict, df_total, total_m2_global, user_name):
-    # Nota: systems_dict ahora recibe {'SystemName': {'df': dataframe, 'm2': 15.5}}
+    """
+    Genera el PDF con el orden: TOTAL -> DETALLE.
+    """
     pdf = PDFReport(user_name)
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=25) 
 
-    # RESUMEN EJECUTIVO (NUEVO)
+    # RESUMEN EJECUTIVO
     pdf.set_font("Helvetica", 'B', 10)
     pdf.set_text_color(50, 50, 50)
     pdf.cell(0, 10, f"RESUMEN DE PROYECTO: Superficie Total Computada: {total_m2_global} m2", ln=True)
     pdf.ln(5)
 
-    # PARTE 1: Desglose
-    pdf.set_font("Helvetica", size=10)
-    pdf.cell(0, 10, "DETALLE DE MATERIALES POR SISTEMA", ln=True)
-    
-    for sistema, data in systems_dict.items():
-        # Extraemos DF y m2
-        df_sys = data['df']
-        m2_sys = data['m2']
-        
-        pdf.chapter_title(f"SISTEMA: {sistema}", subtitle=f"Superficie: {m2_sys} m2")
-        pdf.generate_table(df_sys)
-        pdf.ln(4)
-
-    # PARTE 2: Total
-    pdf.add_page()
+    # [CORRECCIÓN DE ORDEN] PARTE 1: Total Unificado
     pdf.set_font("Helvetica", 'B', 14)
     pdf.set_text_color(40, 55, 71)
     pdf.cell(0, 10, "RESUMEN TOTAL DE COMPRAS (UNIFICADO)", ln=True, align='C')
     pdf.ln(5)
-    
     pdf.generate_table(df_total)
-    pdf.print_final_disclaimer()
     
+    pdf.ln(10) # Espacio separador
+
+    # PARTE 2: Desglose por Sistema
+    pdf.add_page() # Saltamos hoja para el detalle
+    pdf.set_font("Helvetica", size=10)
+    pdf.cell(0, 10, "DETALLE DE MATERIALES POR AMBIENTE/SISTEMA", ln=True)
+    
+    for sistema, data in systems_dict.items():
+        df_sys = data['df']
+        m2_sys = data['m2']
+        pdf.chapter_title(f"SISTEMA: {sistema}", subtitle=f"Superficie: {m2_sys} m2")
+        pdf.generate_table(df_sys)
+        pdf.ln(4)
+
+    pdf.print_final_disclaimer()
     return bytes(pdf.output())
