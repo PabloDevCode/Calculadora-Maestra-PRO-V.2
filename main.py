@@ -31,6 +31,8 @@ def agregar_abertura_temp(ancho, alto, cantidad):
 def limpiar_form_aberturas():
     st.session_state["temp_aberturas"] = []
 
+# --- COPIA Y REEMPLAZA LA FUNCIÓN main() EN main.py ---
+
 def main():
     if not login_form():
         return
@@ -38,17 +40,21 @@ def main():
     # =========================================================================
     # 🛑 ZONA DE ONBOARDING (INTERCEPTOR DE NOMBRE)
     # =========================================================================
-    # Obtenemos los datos de la sesión
     usuario_actual = st.session_state.get("username")
     nombre_actual = st.session_state.get("display_name")
 
-    # CONDICIÓN: Si el nombre está vacío, es "nan" (del excel) o es igual al email
-    # Significa que el usuario NUNCA configuró su nombre comercial.
-    if not nombre_actual or str(nombre_actual) == 'nan' or str(nombre_actual).strip() == str(usuario_actual).strip():
+    # 1. Normalización de datos para comparación segura
+    # Convertimos a string, quitamos espacios y pasamos a minúsculas para validar
+    safe_nombre = str(nombre_actual).strip()
+    safe_user = str(usuario_actual).strip()
+    
+    lista_invalidos = ['nan', 'none', '', 'null']
+
+    # 2. La Condición "Paranoica"
+    # Si es inválido (nan/vacio) O si es igual al email (usuario no configurado)
+    if safe_nombre.lower() in lista_invalidos or safe_nombre.lower() == safe_user.lower():
         
-        # Creamos columnas para centrar el formulario y que se vea elegante
         c1, c2, c3 = st.columns([1, 2, 1])
-        
         with c2:
             st.markdown("### 👋 ¡Bienvenido al equipo!")
             st.info("Para generar presupuestos profesionales, necesitamos configurar el nombre de tu empresa o marca personal.")
@@ -64,31 +70,41 @@ def main():
                         st.error("El nombre es muy corto.")
                     else:
                         with st.spinner("Configurando tu perfil..."):
-                            # Llamamos a la función que creaste en el paso anterior
                             exito = actualizar_nombre_display(usuario_actual, nuevo_nombre)
                         
                         if exito:
-                            # Actualizamos la sesión manualmente para no esperar a la recarga
                             st.session_state["display_name"] = nuevo_nombre
                             st.success("¡Perfil configurado con éxito!")
                             time.sleep(1)
-                            st.rerun() # Recargamos la página para entrar a la App
+                            st.rerun()
                         else:
                             st.error("Error de conexión. Intenta nuevamente.")
         
-        # ⛔ STOP CRÍTICO: Esto evita que se cargue el resto de la App hasta que guarde el nombre
-        st.stop()
+        st.stop() # ⛔ DETIENE LA EJECUCIÓN AQUÍ
+    
+    # =========================================================================
+    # 🏁 INICIO DE LA APP
+    # =========================================================================
+
     if st.session_state["authenticated"]:
-        # --- AQUÍ LLAMAMOS AL SIDEBAR ---
         render_sidebar_community()
 
     # --- BARRA LATERAL ---
     with st.sidebar:
-        usuario_actual = st.session_state.get('username', 'Invitado').upper()
+        # Lógica de visualización robusta
+        display_text = str(st.session_state.get('display_name', '')).strip()
+        user_email = str(st.session_state.get('username', 'Invitado')).strip()
+
+        # Si el nombre es 'nan' o vacío, usamos el email. Si no, el nombre.
+        if display_text.lower() in ['nan', 'none', '']:
+            texto_licencia = user_email.upper()
+        else:
+            texto_licencia = display_text.upper()
+
         st.markdown(f"""
         <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 6px solid #1E3A8A; margin-bottom: 25px; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
             <p style="margin: 0; font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 1px;">Licencia Propietaria</p>
-            <h2 style="margin: 5px 0 0 0; font-size: 24px; color: #1E3A8A; font-weight: 800; font-family: sans-serif;">{usuario_actual}</h2>
+            <h2 style="margin: 5px 0 0 0; font-size: 20px; color: #1E3A8A; font-weight: 800; font-family: sans-serif; line-height: 1.2;">{texto_licencia}</h2>
             <p style="margin: 5px 0 0 0; font-size: 11px; color: #2ecc71; font-weight: bold;">● SESIÓN ACTIVA Y SEGURA</p>
         </div>
         """, unsafe_allow_html=True)
@@ -97,19 +113,21 @@ def main():
         nombre_ambiente = st.text_input("Etiqueta (ej: Cocina)", "Muro 1")
         sistema = st.selectbox("Sistema", ["Tabique Drywall (Interior)", "Cielorraso (Junta Tomada)", "Steel Frame (Muro EIFS)"])
         
-        st.subheader("2. Dimensiones Muro")
+        st.subheader("2. Dimensiones")
         col1, col2 = st.columns(2)
         
         if "Cielorraso" in sistema:
             ancho = col1.number_input("Ancho (m)", 0.5, 50.0, 3.0)
             largo = col2.number_input("Largo (m)", 0.5, 50.0, 4.0)
+            largo_vela = st.number_input("Largo de Vela/Bajada (m)", 0.1, 5.0, 0.60, step=0.10, help="Distancia desde el techo real hasta el cielorraso.")
             altura = 0
         else:
             largo = col1.number_input("Largo (m)", 0.5, 100.0, 5.0)
             altura = col2.number_input("Altura (m)", 0.5, 20.0, 2.6)
             ancho = 0
+            largo_vela = 0
             
-            # --- GESTIÓN DE ABERTURAS ---
+            # --- GESTIÓN DE ABERTURAS (Solo muros) ---
             st.markdown("---")
             with st.expander("🪟 Gestión de Aberturas", expanded=False):
                 cA, cB, cC = st.columns([1.2, 1.2, 1])
@@ -134,7 +152,9 @@ def main():
         desp = st.slider("Desperdicio (%)", 0, 20, 10)
         aislacion = st.checkbox("Incluir Aislación")
         
-        caras, capas, espesor_cielo = 1, 1, "9.5"
+        # Opciones dinámicas según sistema
+        caras, capas, espesor_cielo = 1, 1, "9.5mm"
+        
         if "Drywall" in sistema:
             caras = st.radio("Caras", [1, 2], horizontal=True, index=1)
             capas = 1 if st.radio("Placas x Cara", ["1", "2"], horizontal=True) == "1" else 2
@@ -142,6 +162,13 @@ def main():
             espesor_cielo = st.radio("Placa", ["9.5mm", "12.5mm"], horizontal=True)
         elif "Steel" in sistema:
             capas = 1 if st.radio("Placas Interior", ["1", "2"], horizontal=True) == "1" else 2
+
+        # Lógica de Cajones (Experimental)
+        st.divider()
+        usar_cajones = st.checkbox("Incluir Cajones/Dinteles")
+        metros_cajon = 0.0
+        if usar_cajones:
+            metros_cajon = st.number_input("Metros Lineales de Cajón", 0.0, 100.0, 0.0)
 
         st.divider()
         
@@ -153,10 +180,11 @@ def main():
                     tipo_sistema=sistema, largo=largo, altura=altura, ancho=ancho,
                     separacion=sep/100, desperdicio=desp, caras=caras, capas=capas,
                     aislacion=aislacion, espesor_cielo=espesor_cielo,
-                    aberturas=lista_aberturas_final
+                    aberturas=lista_aberturas_final,
+                    metros_cajon=metros_cajon,
+                    largo_vela=largo_vela
                 )
                 
-                # [CAMBIO] Desempaquetamos DF y Metadata
                 df_res, metadata = calc.calculate()
                 
                 txt_ab = "No"
@@ -170,7 +198,7 @@ def main():
                     "dims": f"{largo}x{altura}m" if altura > 0 else f"{ancho}x{largo}m",
                     "aberturas": txt_ab,
                     "df": df_res,
-                    "meta": metadata # Guardamos los m2
+                    "meta": metadata
                 })
                 
                 st.toast(f"✅ {nombre_ambiente} Agregado ({metadata['m2']} m2)")
