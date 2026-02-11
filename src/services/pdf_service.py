@@ -122,10 +122,7 @@ class PDFReport(FPDF):
             self.cell(w_cant, h, f"{int(row['Cantidad'])}", 1, 1, 'C', fill_mode)
             alternate = not alternate 
 
-def create_pdf_bytes(systems_dict, df_total, total_m2_global, user_name):
-    """
-    Genera el PDF con el orden: TOTAL -> DETALLE.
-    """
+def create_pdf_bytes(systems_dict, df_total, total_m2_global, user_name, total_mo_global=0):
     pdf = PDFReport(user_name)
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=25) 
@@ -136,17 +133,17 @@ def create_pdf_bytes(systems_dict, df_total, total_m2_global, user_name):
     pdf.cell(0, 10, f"RESUMEN DE PROYECTO: Superficie Total Computada: {total_m2_global} m2", ln=True)
     pdf.ln(5)
 
-    # [CORRECCIÓN DE ORDEN] PARTE 1: Total Unificado
+    # PARTE 1: Total Unificado
     pdf.set_font("Helvetica", 'B', 14)
     pdf.set_text_color(40, 55, 71)
     pdf.cell(0, 10, "RESUMEN TOTAL DE COMPRAS (UNIFICADO)", ln=True, align='C')
     pdf.ln(5)
     pdf.generate_table(df_total)
     
-    pdf.ln(10) # Espacio separador
+    pdf.ln(10)
 
-    # PARTE 2: Desglose por Sistema
-    pdf.add_page() # Saltamos hoja para el detalle
+    # PARTE 2: Detalle por Sistema
+    pdf.add_page() 
     pdf.set_font("Helvetica", size=10)
     pdf.cell(0, 10, "DETALLE DE MATERIALES POR AMBIENTE/SISTEMA", ln=True)
     
@@ -156,6 +153,37 @@ def create_pdf_bytes(systems_dict, df_total, total_m2_global, user_name):
         pdf.chapter_title(f"SISTEMA: {sistema}", subtitle=f"Superficie: {m2_sys} m2")
         pdf.generate_table(df_sys)
         pdf.ln(4)
+
+    # [NUEVO] PARTE 3: Presupuesto Mano de Obra
+    if total_mo_global > 0:
+        pdf.add_page()
+        pdf.set_fill_color(220, 255, 220) # Verde suave
+        pdf.rect(0, 0, 210, 30, 'F') # Fondo encabezado
+        pdf.ln(5)
+        
+        pdf.set_font("Helvetica", 'B', 16)
+        pdf.set_text_color(0, 100, 0)
+        pdf.cell(0, 10, "PRESUPUESTO ESTIMADO DE MANO DE OBRA", ln=True, align='C')
+        pdf.ln(10)
+        
+        pdf.set_font("Helvetica", 'B', 11)
+        pdf.set_text_color(0, 0, 0)
+        
+        # Tabla simple de MO
+        pdf.cell(140, 10, "CONCEPTO POR SISTEMA", 1)
+        pdf.cell(50, 10, "SUBTOTAL", 1, 1, 'C')
+        
+        pdf.set_font("Helvetica", '', 10)
+        for sistema, data in systems_dict.items():
+            if data['mo_total'] > 0:
+                pdf.cell(140, 8, f"{sistema} ({data['m2']} m2)", 1)
+                pdf.cell(50, 8, f"${data['mo_total']:,.0f}", 1, 1, 'C')
+        
+        # Total
+        pdf.set_font("Helvetica", 'B', 12)
+        pdf.cell(140, 12, "TOTAL MANO DE OBRA", 1, 0, 'R')
+        pdf.set_fill_color(200, 255, 200)
+        pdf.cell(50, 12, f"${total_mo_global:,.0f}", 1, 1, 'C', 1)
 
     pdf.print_final_disclaimer()
     return bytes(pdf.output())
