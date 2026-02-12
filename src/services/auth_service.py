@@ -6,7 +6,10 @@ import time
 def validar_usuario(email_input, password_input):
     """
     Valida usuario contra Google Sheets.
-    Soporta: TRUE, 1, 1.0, SI (case insensitive)
+    Retorna:
+      - Dict {display_name, telefono} si es exitoso.
+      - "INACTIVO" si el pago falló.
+      - None si no existe.
     """
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
@@ -14,7 +17,6 @@ def validar_usuario(email_input, password_input):
         df = conn.read(worksheet="Hoja1", ttl=0) 
         
         # 1. Limpieza de datos (Evita errores de tipos y espacios)
-        # Fix crítico para Make: '123456.0' -> '123456'
         if 'usuario' in df.columns:
             df['usuario'] = df['usuario'].astype(str).str.strip()
         if 'password' in df.columns:
@@ -27,12 +29,16 @@ def validar_usuario(email_input, password_input):
         ]
         
         if not usuario_encontrado.empty:
-            # 3. Validación Inteligente de Estado
-            raw_estado = str(usuario_encontrado.iloc[0]['activo']).strip().upper()
+            fila = usuario_encontrado.iloc[0]
+            raw_estado = str(fila['activo']).strip().upper()
             valores_validos = ['TRUE', '1', '1.0', 'SI', 'YES', 'APPROVED']
             
             if raw_estado in valores_validos:
-                return usuario_encontrado.iloc[0]['display_name']
+                # ÉXITO: Devolvemos nombre y teléfono para persistencia
+                return {
+                    "display_name": fila['display_name'],
+                    "telefono": fila.get('telefono', '') # Usamos .get por si la columna no existe
+                }
             else:
                 return "INACTIVO"
         
@@ -43,16 +49,17 @@ def validar_usuario(email_input, password_input):
         return None
 
 def login_form():
-    """Renderiza el formulario con TU DISEÑO ESTÉTICO y gestiona la sesión."""
+    """Renderiza el formulario y gestiona la sesión."""
     if "authenticated" not in st.session_state:
         st.session_state["authenticated"] = False
         st.session_state["username"] = None
         st.session_state["display_name"] = None
+        st.session_state["whatsapp_unlocked"] = False # Nuevo estado
 
     if st.session_state["authenticated"]:
         return True
 
-    # --- TU UI LOGIN ORIGINAL (Conservada) ---
+    # --- UI LOGIN ORIGINAL ---
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown("""
@@ -74,19 +81,26 @@ def login_form():
                 else:
                     resultado = validar_usuario(user_in, pass_in)
                     
-                    if resultado and resultado != "INACTIVO":
+                    if isinstance(resultado, dict):
                         # --- LOGIN EXITOSO ---
                         st.session_state["authenticated"] = True
                         st.session_state["username"] = user_in
                         
-                        # Manejo seguro de nombre vacío (pd.isna requiere pandas importado)
-                        nombre_mostrar = user_in
-                        if not pd.isna(resultado) and str(resultado) not in ["nan", "", "None"]:
-                            nombre_mostrar = resultado
-                            
-                        st.session_state["display_name"] = nombre_mostrar
+                        # 1. Cargar Nombre
+                        raw_name = resultado.get("display_name")
+                        if not pd.isna(raw_name) and str(raw_name).strip() not in ["nan", "", "None"]:
+                            st.session_state["display_name"] = str(raw_name)
+                        else:
+                            st.session_state["display_name"] = user_in
+
+                        # 2. Cargar Teléfono (PERSISTENCIA COMUNIDAD VIP)
+                        raw_tel = str(resultado.get("telefono", ""))
+                        if len(raw_tel) > 6 and raw_tel.lower() not in ["nan", "none", ""]:
+                            st.session_state["whatsapp_unlocked"] = True
+                        else:
+                            st.session_state["whatsapp_unlocked"] = False
                         
-                        st.success(f"¡Bienvenido/a, {nombre_mostrar}!")
+                        st.success(f"¡Bienvenido/a, {st.session_state['display_name']}!")
                         time.sleep(1)
                         st.rerun()
                         
@@ -101,18 +115,16 @@ def logout():
     st.session_state["authenticated"] = False
     st.session_state["username"] = None
     st.session_state["display_name"] = None
+    st.session_state["whatsapp_unlocked"] = False
     st.session_state["project_cart"] = []
-    # st.rerun()  <-- ELIMINADO para evitar error de callback
 
 def actualizar_nombre_display(email_usuario, nuevo_nombre):
-    """
-    Actualiza el nombre preservando la integridad de datos para Make.
-    """
+    """Actualiza el nombre preservando la integridad de datos."""
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
         df = conn.read(worksheet="Hoja1", ttl=0)
         
-        # 🛡️ PROTECCIÓN CRÍTICA DE FORMATO
+        # Protección de formato
         if 'password' in df.columns:
             df['password'] = df['password'].astype(str).replace(r'\.0$', '', regex=True).str.strip()
         if 'usuario' in df.columns:
@@ -124,7 +136,7 @@ def actualizar_nombre_display(email_usuario, nuevo_nombre):
             idx = df.index[mask][0]
             df.at[idx, 'display_name'] = str(nuevo_nombre)
             conn.update(worksheet="Hoja1", data=df)
-            st.cache_data.clear() # Limpiamos caché para ver el cambio al instante
+            st.cache_data.clear()
             return True
         return False
     except Exception as e:

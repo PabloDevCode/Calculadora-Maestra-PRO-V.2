@@ -154,11 +154,11 @@ def create_pdf_bytes(systems_dict, df_total, total_m2_global, user_name, total_m
         pdf.generate_table(df_sys)
         pdf.ln(4)
 
-    # [NUEVO] PARTE 3: Presupuesto Mano de Obra
+    # PARTE 3: Presupuesto Mano de Obra
     if total_mo_global > 0:
         pdf.add_page()
-        pdf.set_fill_color(220, 255, 220) # Verde suave
-        pdf.rect(0, 0, 210, 30, 'F') # Fondo encabezado
+        pdf.set_fill_color(220, 255, 220) 
+        pdf.rect(0, 0, 210, 30, 'F') 
         pdf.ln(5)
         
         pdf.set_font("Helvetica", 'B', 16)
@@ -169,7 +169,6 @@ def create_pdf_bytes(systems_dict, df_total, total_m2_global, user_name, total_m
         pdf.set_font("Helvetica", 'B', 11)
         pdf.set_text_color(0, 0, 0)
         
-        # Tabla simple de MO
         pdf.cell(140, 10, "CONCEPTO POR SISTEMA", 1)
         pdf.cell(50, 10, "SUBTOTAL", 1, 1, 'C')
         
@@ -179,11 +178,17 @@ def create_pdf_bytes(systems_dict, df_total, total_m2_global, user_name, total_m
                 pdf.cell(140, 8, f"{sistema} ({data['m2']} m2)", 1)
                 pdf.cell(50, 8, f"${data['mo_total']:,.0f}", 1, 1, 'C')
         
-        # Total
         pdf.set_font("Helvetica", 'B', 12)
         pdf.cell(140, 12, "TOTAL MANO DE OBRA", 1, 0, 'R')
         pdf.set_fill_color(200, 255, 200)
         pdf.cell(50, 12, f"${total_mo_global:,.0f}", 1, 1, 'C', 1)
 
     pdf.print_final_disclaimer()
-    return bytes(pdf.output())
+    
+    # --- FIX UNIVERSAL (Compatible con todas las versiones) ---
+    salida = pdf.output(dest='S')
+    
+    # Si es texto (str), lo codificamos. Si ya es bytes/bytearray, lo convertimos a bytes puro.
+    if isinstance(salida, str):
+        return salida.encode('latin-1')
+    return bytes(salida)

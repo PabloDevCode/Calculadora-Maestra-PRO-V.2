@@ -166,7 +166,7 @@ def main():
         c_l.button("🔒 Salir", on_click=logout)
 
     # --- MAIN DASHBOARD ---
-    st.title("🛒 Tu Proyecto")
+    st.title("📋 Tu Proyecto")
 
     if not st.session_state["project_cart"]:
         st.info("👈 Configura tu primer ambiente en el menú lateral.")
