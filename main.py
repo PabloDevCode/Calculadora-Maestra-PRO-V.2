@@ -68,6 +68,8 @@ def main():
         display_text = str(st.session_state.get('display_name', '')).strip()
         texto_licencia = display_text.upper() if display_text.lower() not in lista_invalidos else "USUARIO"
 
+       
+
         st.markdown(f"""
         <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; border-left: 6px solid #1E3A8A; margin-bottom: 25px; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
             <p style="margin: 0; font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 1px;">Licencia Propietaria</p>
@@ -168,7 +170,17 @@ def main():
             st.session_state["project_cart"] = []
             st.rerun()
         c_l.button("🔒 Salir", on_click=logout)
-
+     # ... dentro de with st.sidebar: ...
+        st.markdown("---")
+        with st.expander("⚖️ Términos y Condiciones", expanded=False):
+            st.markdown("""
+            <div style='font-size: 10px; color: #666;'>
+            1. <b>Estimación Teórica:</b> Los cálculos son aproximados y se basan en consumo estándar teórico.<br>
+            2. <b>Verificación en Obra:</b> Es responsabilidad del usuario verificar las cantidades y medidas antes de realizar la compra.<br>
+            3. <b>Desperdicios:</b> No se consideran desperdicios extraordinarios por errores de corte o daños.<br>
+            4. <b>Responsabilidad:</b> La aplicación no se responsabiliza por diferencias de stock, sobrantes o faltantes.
+            </div>
+            """, unsafe_allow_html=True)
     # --- MAIN DASHBOARD ---
     st.title("📋 Tu Proyecto")
 
