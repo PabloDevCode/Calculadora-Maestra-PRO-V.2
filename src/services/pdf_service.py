@@ -3,11 +3,13 @@ import pandas as pd
 from datetime import datetime
 
 class PDFReport(FPDF):
-    def __init__(self, user_name="Usuario"):
+    def __init__(self, user_name="Usuario", client_data=None):
         super().__init__()
         self.user_name = str(user_name).upper()
+        self.client_data = client_data if client_data else {}
 
     def header(self):
+        # --- ENCABEZADO PRINCIPAL (AZUL) ---
         if self.page_no() == 1:
             self.set_fill_color(40, 55, 71) 
             self.rect(0, 0, 210, 35, 'F') 
@@ -30,7 +32,31 @@ class PDFReport(FPDF):
             self.set_font('Helvetica', 'I', 7)
             self.set_text_color(255, 100, 100)
             self.cell(65, 5, "COPIA NO AUTORIZADA", 0, 0, 'R')
-            self.ln(25)
+            
+            # --- [CORRECCIÓN 1] DATOS DEL CLIENTE EN LÍNEAS SEPARADAS ---
+            c_name = self.client_data.get('nombre', '')
+            c_loc = self.client_data.get('ubicacion', '')
+            
+            if c_name or c_loc:
+                self.set_xy(0, 35)
+                self.set_fill_color(240, 240, 240) # Gris muy suave
+                self.rect(0, 35, 210, 16, 'F') # Agrandamos un poco el alto
+                
+                self.set_xy(10, 37)
+                self.set_font('Helvetica', 'B', 9)
+                self.set_text_color(50, 50, 50)
+                
+                if c_name:
+                    self.cell(0, 5, f"CLIENTE: {c_name.upper()}", 0, 1, 'L')
+                
+                if c_loc:
+                    self.set_x(10) # Reseteamos margen X
+                    self.cell(0, 5, f"UBICACIÓN: {c_loc.upper()}", 0, 1, 'L')
+                
+                self.ln(10) # Espacio extra
+            else:
+                self.ln(25) # Espacio normal
+
         else:
             self.set_fill_color(240, 240, 240) 
             self.rect(0, 0, 210, 10, 'F')
@@ -122,15 +148,21 @@ class PDFReport(FPDF):
             self.cell(w_cant, h, f"{int(row['Cantidad'])}", 1, 1, 'C', fill_mode)
             alternate = not alternate 
 
-def create_pdf_bytes(systems_dict, df_total, total_m2_global, user_name, total_mo_global=0):
-    pdf = PDFReport(user_name)
+def create_pdf_bytes(project_items, df_total, total_m2_global, user_name, total_mo_global=0, client_name="", client_loc=""):
+    """
+    project_items: Lista directa del carrito (st.session_state["project_cart"])
+    """
+    c_data = {"nombre": client_name, "ubicacion": client_loc}
+    
+    pdf = PDFReport(user_name, client_data=c_data)
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=25) 
 
     # RESUMEN EJECUTIVO
     pdf.set_font("Helvetica", 'B', 10)
     pdf.set_text_color(50, 50, 50)
-    pdf.cell(0, 10, f"RESUMEN DE PROYECTO: Superficie Total Computada: {total_m2_global} m2", ln=True)
+    # [CORRECCIÓN 2] Decimales formateados
+    pdf.cell(0, 10, f"RESUMEN DE PROYECTO: Superficie Total Computada: {total_m2_global:.2f} m2", ln=True)
     pdf.ln(5)
 
     # PARTE 1: Total Unificado
@@ -142,16 +174,20 @@ def create_pdf_bytes(systems_dict, df_total, total_m2_global, user_name, total_m
     
     pdf.ln(10)
 
-    # PARTE 2: Detalle por Sistema
+    # PARTE 2: Detalle (ITEM POR ITEM - CORRECCIÓN 3)
     pdf.add_page() 
     pdf.set_font("Helvetica", size=10)
-    pdf.cell(0, 10, "DETALLE DE MATERIALES POR AMBIENTE/SISTEMA", ln=True)
+    pdf.cell(0, 10, "DETALLE DE MATERIALES POR AMBIENTE", ln=True)
     
-    for sistema, data in systems_dict.items():
-        df_sys = data['df']
-        m2_sys = data['m2']
-        pdf.chapter_title(f"SISTEMA: {sistema}", subtitle=f"Superficie: {m2_sys} m2")
-        pdf.generate_table(df_sys)
+    for item in project_items:
+        nombre = item['nombre']
+        sistema = item['sistema']
+        m2 = item['meta']['m2']
+        df_item = item['df']
+        
+        # Título: "Cocina (Drywall) - 15.20 m2"
+        pdf.chapter_title(f"{nombre} ({sistema})", subtitle=f"Superficie: {m2:.2f} m2")
+        pdf.generate_table(df_item)
         pdf.ln(4)
 
     # PARTE 3: Presupuesto Mano de Obra
@@ -169,14 +205,19 @@ def create_pdf_bytes(systems_dict, df_total, total_m2_global, user_name, total_m
         pdf.set_font("Helvetica", 'B', 11)
         pdf.set_text_color(0, 0, 0)
         
-        pdf.cell(140, 10, "CONCEPTO POR SISTEMA", 1)
+        pdf.cell(140, 10, "CONCEPTO POR AMBIENTE", 1)
         pdf.cell(50, 10, "SUBTOTAL", 1, 1, 'C')
         
         pdf.set_font("Helvetica", '', 10)
-        for sistema, data in systems_dict.items():
-            if data['mo_total'] > 0:
-                pdf.cell(140, 8, f"{sistema} ({data['m2']} m2)", 1)
-                pdf.cell(50, 8, f"${data['mo_total']:,.0f}", 1, 1, 'C')
+        
+        # Iteramos por ITEM también para el detalle de mano de obra
+        for item in project_items:
+            mo_item = item['meta'].get('total_mo_item', 0)
+            if mo_item > 0:
+                nombre = item['nombre']
+                m2 = item['meta']['m2']
+                pdf.cell(140, 8, f"{nombre} ({m2:.2f} m2)", 1)
+                pdf.cell(50, 8, f"${mo_item:,.0f}", 1, 1, 'C')
         
         pdf.set_font("Helvetica", 'B', 12)
         pdf.cell(140, 12, "TOTAL MANO DE OBRA", 1, 0, 'R')
@@ -185,10 +226,8 @@ def create_pdf_bytes(systems_dict, df_total, total_m2_global, user_name, total_m
 
     pdf.print_final_disclaimer()
     
-    # --- FIX UNIVERSAL (Compatible con todas las versiones) ---
-    salida = pdf.output(dest='S')
     
-    # Si es texto (str), lo codificamos. Si ya es bytes/bytearray, lo convertimos a bytes puro.
+    salida = pdf.output(dest='S')
     if isinstance(salida, str):
         return salida.encode('latin-1')
     return bytes(salida)

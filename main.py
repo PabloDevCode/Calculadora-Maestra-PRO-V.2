@@ -76,6 +76,13 @@ def main():
         </div>
         """, unsafe_allow_html=True)
 
+        # --- DATOS CLIENTE ---
+        cliente_nombre = ""
+        cliente_ubicacion = ""
+        with st.expander("👤 Datos del Cliente (Opcional)"):
+            cliente_nombre = st.text_input("Nombre Cliente:", placeholder="Ej: Juan Pérez")
+            cliente_ubicacion = st.text_input("Ubicación/Obra:", placeholder="Ej: Av. Libertador 1234")
+        
         st.header("1. Definir Estructura")
         nombre_ambiente = st.text_input("Etiqueta (ej: Cocina)", "Muro 1")
         sistema = st.selectbox("Sistema", ["Tabique Drywall (Interior)", "Cielorraso (Junta Tomada)", "Steel Frame (Muro EIFS)"])
@@ -124,11 +131,9 @@ def main():
         elif "Steel" in sistema:
             capas = 1 if st.radio("Placas Interior", ["1", "2"], horizontal=True) == "1" else 2
 
-        # --- [NUEVO] COTIZADOR DE MANO DE OBRA ---
         st.divider()
         st.subheader("💰 Mano de Obra (Estimada)")
-        precio_mo = st.number_input("Precio por m² ($)", min_value=0.0, value=0.0, step=100.0, help="Precio de mano de obra para este ítem específico.")
-        # -----------------------------------------
+        precio_mo = st.number_input("Precio por m² ($)", min_value=0.0, value=0.0, step=100.0)
 
         st.divider()
         if st.button("➕ Agregar al Proyecto", type="primary"):
@@ -144,7 +149,6 @@ def main():
                 
                 df_res, metadata = calc.calculate()
                 
-                # Guardamos el precio en la metadata del ítem
                 metadata['precio_mo_unitario'] = precio_mo
                 metadata['total_mo_item'] = precio_mo * metadata['m2']
 
@@ -171,30 +175,11 @@ def main():
     if not st.session_state["project_cart"]:
         st.info("👈 Configura tu primer ambiente en el menú lateral.")
     else:
-        # Procesamiento
         all_dfs = [item['df'] for item in st.session_state["project_cart"]]
         total_m2 = sum([item['meta']['m2'] for item in st.session_state["project_cart"]])
-        
-        # Cálculo de Mano de Obra Total
         total_mo_global = sum([item['meta']['total_mo_item'] for item in st.session_state["project_cart"]])
         
         df_total = pd.concat(all_dfs).groupby(["Material", "Unidad", "Categoría"], as_index=False)["Cantidad"].sum()
-
-        sys_data = {}
-        sistemas = set([x['sistema'] for x in st.session_state["project_cart"]])
-        for s in sistemas:
-            items = [x for x in st.session_state["project_cart"] if x['sistema'] == s]
-            sys_df = pd.concat([x['df'] for x in items]).groupby(["Material", "Unidad", "Categoría"], as_index=False)["Cantidad"].sum()
-            sys_m2 = sum([x['meta']['m2'] for x in items])
-            
-            # Subtotal MO por sistema
-            sys_mo = sum([x['meta']['total_mo_item'] for x in items])
-            
-            sys_data[s] = {
-                'df': sys_df, 
-                'm2': round(sys_m2, 2),
-                'mo_total': sys_mo # Pasamos el total de MO de este sistema
-            }
 
         tab1, tab2 = st.tabs(["📋 Detalle", "📦 Total & PDF"])
         
@@ -203,7 +188,7 @@ def main():
                 m2_item = item['meta']['m2']
                 mo_item = item['meta']['total_mo_item']
                 
-                titulo = f"📍 {item['nombre']} ({m2_item} m²)"
+                titulo = f"📍 {item['nombre']} ({m2_item:.2f} m²)"
                 if mo_item > 0:
                     titulo += f" | 👷 ${mo_item:,.0f}"
                 
@@ -212,7 +197,6 @@ def main():
                     if st.button("Eliminar", key=f"d{i}"): eliminar_item(i); st.rerun()
 
         with tab2:
-            # TARJETAS DE RESUMEN
             c_m2, c_mo = st.columns(2)
             c_m2.metric("Superficie Total", f"{total_m2:.2f} m²")
             c_mo.metric("Mano de Obra Estimada", f"${total_mo_global:,.0f}")
@@ -222,15 +206,30 @@ def main():
             
             st.divider()
             try:
-                # Pasamos los datos de MO al PDF
                 pdf_bytes = create_pdf_bytes(
-                    sys_data, 
+                    st.session_state["project_cart"], 
                     df_total, 
                     total_m2, 
                     texto_licencia,
-                    total_mo_global # Nuevo argumento
+                    total_mo_global,
+                    cliente_nombre,
+                    cliente_ubicacion
                 )
-                st.download_button("📄 Descargar PDF Oficial", pdf_bytes, "computo.pdf", "application/pdf", type="primary")
+                
+                # [LÓGICA DE NOMBRE ARCHIVO PERSONALIZADO]
+                nombre_archivo = "computo_materiales.pdf"
+                if cliente_nombre and cliente_nombre.strip():
+                    # Sanitizamos el nombre
+                    nombre_limpio = "".join([c if c.isalnum() else "_" for c in cliente_nombre.strip()])
+                    nombre_archivo = f"computo - {nombre_limpio}.pdf"
+
+                st.download_button(
+                    label="📄 Descargar PDF Oficial", 
+                    data=pdf_bytes, 
+                    file_name=nombre_archivo, # <--- Variable dinámica
+                    mime="application/pdf", 
+                    type="primary"
+                )
             except Exception as e:
                 st.error(f"Error PDF: {e}")
 

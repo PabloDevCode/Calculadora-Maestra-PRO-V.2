@@ -50,14 +50,12 @@ class DrywallPartition(ConstructionSystem):
             ml_montante_refuerzo += (self.altura * 2) * qty
 
         # 4. MATERIALES
-        # Perfiles
         cant_soleras_u = math.ceil(((ml_solera_base + ml_solera_refuerzo) * self.desp) / MC.L_PERFIL_DW)
         cant_montantes_u = math.ceil(((ml_montante_total + ml_montante_refuerzo) * self.desp) / MC.L_PERFIL_DW)
 
         self.add_material(Cat.ESTRUCTURA, MC.SOLERA_70, MC.UNITS["U"], cant_soleras_u)
         self.add_material(Cat.ESTRUCTURA, MC.MONTANTE_69, MC.UNITS["U"], cant_montantes_u)
 
-        # Placas
         sup_placa_neta = max(0, sup_placa_bruta - sup_descuento_placas)
         sup_placa_final = sup_placa_neta * self.capas
         cant_placas = math.ceil((sup_placa_final * self.desp) / MC.SUP_PLACA)
@@ -76,18 +74,23 @@ class DrywallPartition(ConstructionSystem):
         cant_tarugos = math.ceil((self.largo / 0.60) * 2)
         self.add_material(Cat.FIJACIONES, MC.TARUGO_8, MC.UNITS["U"], math.ceil(cant_tarugos * 1.05))
 
-        # Terminaciones
-        self.add_material(Cat.TERMINACION, MC.CINTA, MC.UNITS["M"], math.ceil(sup_placa_final * 1.55))
+        # TERMINACIONES (Lógica Ajustada)
+        # 1. Cinta de Papel: Superficie (Juntas) + Perímetro (Ángulos)
+        perimetro_total = (self.largo + self.altura) * 2
+        ml_cinta = (sup_placa_final * 1.55) + perimetro_total
+        self.add_material(Cat.TERMINACION, MC.CINTA, MC.UNITS["M"], math.ceil(ml_cinta))
         
-        # [CORRECCIÓN] Masilla: Base por m2 + Adicional por cantoneras
-        consumo_masilla = (sup_placa_final * 0.90) + (ml_cantonera * 0.40) # Agregamos carga por cantonera
+        # 2. Masilla: 
+        # - Base (Juntas + Tornillos + 2 manos): 1.10 kg/m2
+        # - Ángulos Perimetrales (Cinta papel en ángulo): 0.15 kg/ml
+        # - Cantoneras (Cinta metal/papel externo): 0.40 kg/ml
+        consumo_masilla = (sup_placa_final * 1.10) + (perimetro_total * 0.15) + (ml_cantonera * 0.40)
         self.add_material(Cat.TERMINACION, MC.MASILLA, MC.UNITS["KG"], math.ceil(consumo_masilla))
         
         if ml_cantonera > 0:
             self.add_material(Cat.TERMINACION, MC.CANTONERA, MC.UNITS["U"], math.ceil((ml_cantonera * self.desp) / 2.60))
 
         if self.aislacion:
-            # [CORRECCIÓN] Nombre unificado
             sup_aislacion = (self.largo * self.altura) - (sup_descuento_placas / self.caras)
             self.add_material(Cat.AISLACION, "Aislación", MC.UNITS["M2"], math.ceil(sup_aislacion * self.desp))
 
@@ -116,7 +119,6 @@ class DrywallCeiling(ConstructionSystem):
         cant_soleras_u = math.ceil((ml_solera * self.desp) / MC.L_PERFIL_DW)
         
         ml_cierre = self.ancho_menor * 2
-        
         largo_portante = self.ancho_menor + (0.40 if self.ancho_menor > 2.60 else 0)
         num_portantes = math.ceil(self.largo_mayor / self.sep) + 1
         ml_portadoras = num_portantes * largo_portante
@@ -147,7 +149,6 @@ class DrywallCeiling(ConstructionSystem):
         if self.largo_mayor > 2.60: t1_base += num_maestras * 4
         
         self.add_material(Cat.FIJACIONES, MC.T1, MC.UNITS["U"], math.ceil((t1_total + t1_base) * 1.10))
-        
         t2_total = (sup_neta * 18) + (cruces * 4)
         self.add_material(Cat.FIJACIONES, MC.T2_AGUJA, MC.UNITS["U"], math.ceil(t2_total * 1.05))
 
@@ -155,11 +156,18 @@ class DrywallCeiling(ConstructionSystem):
         self.add_material(Cat.FIJACIONES, MC.TARUGO_8, MC.UNITS["U"], math.ceil(total_velas + fijaciones_pared))
 
         if self.aislacion:
-            # [CORRECCIÓN] Nombre unificado
             self.add_material(Cat.AISLACION, "Aislación", MC.UNITS["M2"], math.ceil(sup_neta * self.desp))
 
-        self.add_material(Cat.TERMINACION, MC.MASILLA, MC.UNITS["KG"], math.ceil(sup_neta * 0.90))
-        self.add_material(Cat.TERMINACION, MC.CINTA, MC.UNITS["M"], math.ceil(sup_neta * 1.50))
+        # TERMINACIONES (Lógica Ajustada)
+        # Cinta: m2 + Perímetro (ángulos internos pared-techo)
+        ml_cinta = (sup_neta * 1.50) + perimetro
+        self.add_material(Cat.TERMINACION, MC.CINTA, MC.UNITS["M"], math.ceil(ml_cinta))
+        
+        # Masilla:
+        # - Base m2 (Juntas + Tornillos): 1.10 kg/m2
+        # - Ángulo Perimetral: 0.15 kg/ml
+        consumo_masilla = (sup_neta * 1.10) + (perimetro * 0.15)
+        self.add_material(Cat.TERMINACION, MC.MASILLA, MC.UNITS["KG"], math.ceil(consumo_masilla))
 
         return self.get_dataframe(), {"m2": round(sup_neta, 2), "detalle": "Cielorraso"}
 
@@ -214,14 +222,15 @@ class SteelFrameEIFS(ConstructionSystem):
         self.add_material(Cat.EIFS_SUSTRATO, MC.OSB_11, MC.UNITS["U"], math.ceil((sup_bruta * self.desp) / 2.97))
         self.add_material(Cat.EIFS_AISLACION, MC.TYVEK, MC.UNITS["M2"], math.ceil(sup_bruta * 1.10)) 
         self.add_material(Cat.EIFS_AISLACION, MC.EPS_ALTA, MC.UNITS["M2"], math.ceil(sup_neta * 1.08)) 
-        self.add_material(Cat.EIFS_BASE, MC.BASE_COAT, MC.UNITS["KG"], math.ceil(sup_eifs_total * 6.5))
+        
+        # [CORRECCIÓN BASE COAT] Bajado a 5.5 kg/m2
+        self.add_material(Cat.EIFS_BASE, MC.BASE_COAT, MC.UNITS["KG"], math.ceil(sup_eifs_total * 5.5))
         self.add_material(Cat.EIFS_BASE, MC.MALLA, MC.UNITS["M2"], math.ceil(sup_eifs_total * 1.15))
 
         sup_interior = sup_neta * self.capas_int
         self.add_material(Cat.INTERIOR, MC.PLACA_12, MC.UNITS["U"], math.ceil((sup_interior * self.desp) / MC.SUP_PLACA))
 
         if self.aislacion:
-            # [CORRECCIÓN] Nombre unificado
             self.add_material(Cat.AISLACION, "Aislación", MC.UNITS["M2"], math.ceil(sup_neta * self.desp))
 
         self.add_material(Cat.FIJACIONES, MC.TORNILLO_HEX, MC.UNITS["U"], math.ceil(total_postes_necesarios * 8))
